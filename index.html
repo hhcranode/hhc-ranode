@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ธนาคารอุปกรณ์ HHC เครือข่าย รพ.ระโนด</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{font-family:'Sarabun',sans-serif}
+#regTable th.sticky-col,#regTable td.sticky-col{position:sticky;left:0;z-index:5;background:#fff;box-shadow:2px 0 4px -2px rgba(0,0,0,.25)}
+#regTable thead th.sticky-col{background:#e2e8f0;z-index:6}
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center text-white text-lg font-medium">
+  กำลังซิงค์ข้อมูลกับคลังกลาง...
+</div>
+
+<nav class="bg-blue-700 text-white shadow">
+  <div class="max-w-7xl mx-auto px-4 py-3">
+    <div class="flex items-center justify-between gap-3">
+      <h1 class="text-lg sm:text-xl font-bold">ธนาคารอุปกรณ์ HHC เครือข่ายโรงพยาบาลระโนด (Online)</h1>
+      <button onclick="goAlerts()" class="relative bg-blue-900 hover:bg-blue-950 px-3 py-1.5 rounded text-sm">
+        แจ้งเตือน <span id="bellCount" class="hidden absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">0</span>
+      </button>
+    </div>
+    <div class="flex flex-wrap gap-2 mt-3">
+      <button data-tab="dashboard" class="tabbtn px-3 py-1.5 rounded text-sm font-medium bg-blue-900">ภาพรวม/สรุปยอด</button>
+      <button data-tab="stock" class="tabbtn px-3 py-1.5 rounded text-sm font-medium bg-blue-600">ตั้งค่ายอดคงคลัง</button>
+      <button data-tab="transaction" class="tabbtn px-3 py-1.5 rounded text-sm font-medium bg-blue-600">เบิก / ยืมอุปกรณ์</button>
+      <button data-tab="registry" class="tabbtn px-3 py-1.5 rounded text-sm font-medium bg-blue-600">ทะเบียนยืม-คืน</button>
+      <button data-tab="analytics" class="tabbtn px-3 py-1.5 rounded text-sm font-medium bg-blue-600">แนวโน้มรายเดือน</button>
+    </div>
+  </div>
+</nav>
+
+<main class="max-w-7xl mx-auto px-4 py-6">
+  <!-- ===== DASHBOARD ===== -->
+  <section id="tab-dashboard" class="space-y-5">
+    <div id="alertBox"></div>
+    <div id="cards" class="grid grid-cols-2 lg:grid-cols-5 gap-4"></div>
+    <div class="bg-white p-4 rounded-xl shadow-sm border flex flex-col sm:flex-row items-center justify-between gap-3">
+      <h2 class="font-semibold text-slate-700">สรุปยอดคงเหลือแยกตามสถานบริการ (คลังกลาง)</h2>
+      <div class="flex gap-2">
+        <select id="filterUnit" class="border rounded-lg px-3 py-2 text-sm"></select>
+        <button onclick="exportInventory()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-3 py-2 rounded-lg">Export Excel</button>
+      </div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border overflow-x-auto">
+      <table class="w-full text-sm border-collapse">
+        <thead><tr id="invHead" class="bg-slate-200 text-slate-700"></tr></thead>
+        <tbody id="invBody" class="divide-y"></tbody>
+        <tfoot><tr id="invFoot" class="bg-blue-50 font-bold"></tr></tfoot>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===== STOCK ===== -->
+  <section id="tab-stock" class="hidden space-y-5">
+    <div class="bg-white p-4 rounded-xl shadow-sm border flex flex-col sm:flex-row items-center justify-between gap-3">
+      <h2 class="font-semibold text-slate-700">ลงยอดจำนวนอุปกรณ์ตั้งต้น (บันทึกลง Google Sheets)</h2>
+      <button onclick="saveStock()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg">บันทึกยอดลงคลังกลาง</button>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border overflow-x-auto">
+      <table class="w-full text-sm border-collapse">
+        <thead><tr id="stockHead" class="bg-slate-200 text-slate-700"></tr></thead>
+        <tbody id="stockBody" class="divide-y"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===== TRANSACTION ===== -->
+  <section id="tab-transaction" class="hidden">
+    <div class="bg-white p-6 rounded-xl shadow-sm border max-w-4xl mx-auto">
+      <h2 class="text-lg font-semibold text-slate-700 mb-4">บันทึกการยืมอุปกรณ์ให้ผู้ป่วย (เลือกได้หลายรายการ)</h2>
+      
+      <form id="txForm" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-1">หน่วยงานเจ้าของคลัง (ผู้ให้ยืม/ตัดสต็อก)</label>
+          <select id="txSource" required class="w-full border rounded-lg px-3 py-2 text-sm"></select>
+        </div>
+
+        <div class="p-4 bg-slate-50 border rounded-lg space-y-3">
+          <h3 class="text-sm font-semibold text-blue-700">เลือกรายการอุปกรณ์ที่ต้องการยืม</h3>
+          <div id="itemListContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+        </div>
+
+        <div id="patientBox" class="p-4 bg-slate-50 border rounded-lg space-y-3">
+          <h3 class="text-sm font-semibold text-blue-700">รายละเอียดผู้ยืม</h3>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div><label class="block text-xs mb-1">HN</label><input id="pHN" class="w-full border rounded px-2 py-1.5 text-sm"></div>
+            <div class="sm:col-span-2"><label class="block text-xs mb-1">ชื่อ-สกุล ผู้ป่วย</label><input id="pName" class="w-full border rounded px-2 py-1.5 text-sm"></div>
+          </div>
+          <div><label class="block text-xs mb-1">ที่อยู่</label><input id="pAddr" class="w-full border rounded px-2 py-1.5 text-sm" placeholder="บ้านเลขที่ หมู่ ตำบล อำเภอ"></div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div><label class="block text-xs mb-1">เบอร์โทร</label><input id="pPhone" class="w-full border rounded px-2 py-1.5 text-sm"></div>
+            <div><label class="block text-xs mb-1">วันที่ยืม</label><input type="date" id="pDate" class="w-full border rounded px-2 py-1.5 text-sm"></div>
+            <div><label class="block text-xs mb-1">กำหนดคืน</label><input type="date" id="pDue" class="w-full border rounded px-2 py-1.5 text-sm"></div>
+          </div>
+          <div class="border-t pt-3">
+            <label class="flex items-center gap-2 text-sm font-medium text-slate-600">
+              <input type="checkbox" id="byRelative" onchange="document.getElementById('relBox').classList.toggle('hidden',!this.checked)"> ญาติยืมแทน
+            </label>
+            <div id="relBox" class="hidden grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+              <div><input id="rName" placeholder="ชื่อญาติ" class="w-full border rounded px-2 py-1.5 text-sm"></div>
+              <div><input id="rRelation" placeholder="ความสัมพันธ์" class="w-full border rounded px-2 py-1.5 text-sm"></div>
+              <div><input id="rPhone" placeholder="เบอร์โทรญาติ" class="w-full border rounded px-2 py-1.5 text-sm"></div>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div><input id="pStaff" placeholder="เจ้าหน้าที่ผู้ให้ยืม" class="w-full border rounded px-2 py-1.5 text-sm"></div>
+            <div><input id="txNote" placeholder="หมายเหตุ / สภาพอุปกรณ์" class="w-full border rounded px-2 py-1.5 text-sm"></div>
+          </div>
+        </div>
+
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg">บันทึกรายการยืม</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ===== REGISTRY ===== -->
+  <section id="tab-registry" class="hidden space-y-5">
+    <div class="bg-white p-4 rounded-xl shadow-sm border flex flex-col sm:flex-row items-center justify-between gap-3">
+      <h2 class="font-semibold text-slate-700">ทะเบียนคุมการยืม-คืน</h2>
+      <div class="flex flex-wrap gap-2">
+        <input id="searchBox" oninput="renderRegistry()" placeholder="ค้นหา HN / ชื่อ" class="border rounded-lg px-3 py-2 text-sm">
+        <select id="filterStatus" onchange="renderRegistry()" class="border rounded-lg px-3 py-2 text-sm">
+          <option value="all">ทุกสถานะ</option><option value="out">กำลังยืม</option><option value="overdue">เกินกำหนด</option><option value="back">คืนแล้ว</option>
+        </select>
+        <button onclick="exportRegistry()" class="bg-emerald-600 text-white text-sm px-3 py-2 rounded-lg">Export Excel</button>
+      </div>
+    </div>
+    <div class="bg-white p-4 rounded-xl shadow-sm border">
+      <h3 class="font-semibold text-slate-700 mb-3">รายการค้างคืน (ด่วน)</h3>
+      <div id="quickReturn" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3"></div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border overflow-x-auto">
+      <table id="regTable" class="w-full text-xs border-collapse">
+        <thead class="bg-slate-200 text-slate-700">
+          <tr>
+            <th class="p-2 border sticky-col">จัดการ</th><th class="p-2 border">สถานะ</th><th class="p-2 border">เลขที่</th><th class="p-2 border">วันที่ยืม</th><th class="p-2 border">หน่วยงาน</th>
+            <th class="p-2 border">HN</th><th class="p-2 border">ชื่อผู้ป่วย</th><th class="p-2 border">เบอร์โทร</th><th class="p-2 border">รายการอุปกรณ์ที่ยืม</th>
+            <th class="p-2 border">ญาติ</th><th class="p-2 border">เบอร์ญาติ</th><th class="p-2 border">กำหนดคืน</th><th class="p-2 border">วันที่คืน</th>
+          </tr>
+        </thead>
+        <tbody id="regBody" class="divide-y"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===== ANALYTICS ===== -->
+  <section id="tab-analytics" class="hidden space-y-5">
+    <div class="bg-white p-4 rounded-xl shadow-sm border flex justify-between items-center">
+      <h2 class="font-semibold text-slate-700">แนวโน้มการเบิกรายเดือน</h2>
+      <select id="trendUnit" onchange="renderChart()" class="border rounded-lg px-3 py-2 text-sm"></select>
+    </div>
+    <div class="bg-white p-5 rounded-xl shadow-sm border"><div class="h-80"><canvas id="chartBar"></canvas></div></div>
+  </section>
+</main>
+
+<!-- MODAL รับคืน -->
+<div id="returnModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-xl p-6 w-full max-w-md space-y-4">
+    <h3 class="font-semibold text-slate-700">บันทึกรับคืนอุปกรณ์</h3>
+    <p id="returnInfo" class="text-sm text-slate-600 bg-slate-50 p-3 rounded border"></p>
+    <div><label class="block text-sm mb-1">วันที่คืน</label><input type="date" id="returnDate" class="w-full border rounded px-2 py-1.5 text-sm"></div>
+    <div><label class="block text-sm mb-1">สภาพอุปกรณ์</label>
+      <select id="returnCond" class="w-full border rounded px-2 py-1.5 text-sm">
+        <option>ปกติ พร้อมใช้งาน</option><option>ชำรุดเล็กน้อย ซ่อมได้</option><option>ชำรุด ใช้งานไม่ได้</option><option>สูญหาย</option>
+      </select>
+    </div>
+    <div><label class="block text-sm mb-1">เจ้าหน้าที่ผู้รับคืน</label><input id="returnStaff" class="w-full border rounded px-2 py-1.5 text-sm"></div>
+    <div class="flex gap-2">
+      <button onclick="confirmReturn()" class="flex-1 bg-emerald-600 text-white py-2 rounded text-sm">ยืนยันรับคืน</button>
+      <button onclick="document.getElementById('returnModal').classList.add('hidden')" class="flex-1 bg-slate-200 py-2 rounded text-sm">ยกเลิก</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzoF-lX5JFvVPqxliX6x4YEq_Hm3Rke-AzbyzX4am8hcngv8qysh2kqLlr9AwtXUkX1/exec";
+
+const UNITS = ["รพ.ระโนด","รพ.สต.คลองแดน","รพ.สต.ท่าบอน","รพ.สต.แดนสงวน","รพ.สต.ปากแตระ","รพ.สต.ระวะ","รพ.สต.พังยาง","รพ.สต.บ่อตรุ","คลินิกเวช","รพ.สต.ผักกูด","รพ.สต.บ้านใหม่","รพ.สต.ตะเครียะ","รพ.สต.วัดสน","รพ.สต.บ้านขาว"];
+const ITEMS = [
+  {id:"bed", name:"เตียงผู้ป่วย"},
+  {id:"airbed", name:"เบาะลม"},
+  {id:"neb", name:"เครื่องพ่นยา"},
+  {id:"suc", name:"เครื่องดูดเสมหะ (suction)"},
+  {id:"o2_5l", name:"เครื่องออกซิเจนไฟฟ้าขนาด 5 ลิตร"},
+  {id:"o2_10l", name:"เครื่องออกซิเจนไฟฟ้าขนาด 10 ลิตร"},
+  {id:"o2_tank", name:"ถังออกซิเจน (เล็ก)"},
+  {id:"o2_gauge", name:"เกจ์ออกซิเจน"},
+  {id:"wc", name:"รถเข็นนั่ง"},
+  {id:"cane1", name:"ไม้เท้าขาเดียว (one point cane)"},
+  {id:"tripod", name:"ไม้เท้าสามขา (tripod)"},
+  {id:"walker", name:"ไม้เท้า 4 ขา (walker)"},
+  {id:"crutch", name:"ไม้ค้ำยัน"},
+  {id:"syringe", name:"เครื่อง syringe driver"}
+];
+const MONTHS_FULL = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
+
+let GLOBAL_DATA = { inventory: {}, borrowers: [] };
+
+/* ---------- ฟังก์ชันวันที่ ---------- */
+function thDate(d){ if(!d) return '-'; const x=new Date(d); return x.getDate()+'/'+(x.getMonth()+1)+'/'+(x.getFullYear()+543); }
+function thLong(d){ if(!d) return '.................................'; const x=new Date(d); return `${x.getDate()} ${MONTHS_FULL[x.getMonth()]} พ.ศ. ${x.getFullYear()+543}`; }
+function daysLeft(due){ if(!due) return null; const d=new Date(due); d.setHours(0,0,0,0); const t=new Date(); t.setHours(0,0,0,0); return Math.round((d-t)/86400000); }
+
+async function loadData() {
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+  try {
+    let res = await fetch(WEB_APP_URL + "?action=getData");
+    let json = await res.json();
+    if(json.status === 'success') {
+      GLOBAL_DATA.inventory = json.inventory;
+      GLOBAL_DATA.borrowers = json.borrowers;
+      if(Object.keys(GLOBAL_DATA.inventory).length === 0) initDefaultInventory();
+    }
+  } catch(err) {
+    alert('ไม่สามารถเชื่อมต่อฐานข้อมูลกลางได้ กรุณาตรวจสอบอินเทอร์เน็ต');
+  }
+  document.getElementById('loadingOverlay').classList.add('hidden');
+  renderDashboard();
+}
+
+function initDefaultInventory(){
+  let inv = {};
+  UNITS.forEach(u=>{ inv[u]={}; ITEMS.forEach(i=>{ inv[u][i.id] = u==="รพ.ระโนด"?10:3; }); });
+  GLOBAL_DATA.inventory = inv;
+}
+
+document.querySelectorAll('.tabbtn').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+function switchTab(id){
+  ['dashboard','stock','transaction','registry','analytics'].forEach(t=>document.getElementById('tab-'+t).classList.add('hidden'));
+  document.getElementById('tab-'+id).classList.remove('hidden');
+  document.querySelectorAll('.tabbtn').forEach(b=>{ b.classList.toggle('bg-blue-900',b.dataset.tab===id); b.classList.toggle('bg-blue-600',b.dataset.tab!==id); });
+  if(id==='dashboard') renderDashboard();
+  if(id==='stock') renderStock();
+  if(id==='registry') renderRegistry();
+  if(id==='analytics') renderChart();
+}
+function goAlerts(){ switchTab('registry'); document.getElementById('filterStatus').value='overdue'; renderRegistry(); }
+
+function fillSelects(){
+  const opt = '<option value="all">-- ทุกสถานบริการ --</option>'+UNITS.map(u=>`<option>${u}</option>`).join('');
+  filterUnit.innerHTML = opt; trendUnit.innerHTML = opt;
+  txSource.innerHTML = UNITS.map(u=>`<option>${u}</option>`).join('');
+
+  let itemHtml = ITEMS.map(i=>`
+    <div class="flex items-center justify-between p-2 border rounded bg-white">
+      <label class="flex items-center gap-2 text-sm cursor-pointer flex-1">
+        <input type="checkbox" value="${i.id}" class="item-chk w-4 h-4 text-blue-600 rounded">
+        <span>${i.name}</span>
+      </label>
+      <input type="number" min="1" value="1" id="qty_${i.id}" class="w-16 border rounded px-1.5 py-1 text-sm text-center">
+    </div>
+  `).join('');
+  document.getElementById('itemListContainer').innerHTML = itemHtml;
+
+  pDate.valueAsDate = new Date();
+  let d = new Date(); d.setDate(d.getDate()+30); pDue.valueAsDate = d;
+}
+
+document.getElementById('txForm').onsubmit = async function(e){
+  e.preventDefault();
+  let src = txSource.value;
+  let chks = document.querySelectorAll('.item-chk:checked');
+  if(chks.length === 0){ alert('กรุณาเลือกอุปกรณ์อย่างน้อย 1 รายการ'); return; }
+
+  let selectedItems = [];
+  let inv = GLOBAL_DATA.inventory;
+
+  for(let chk of chks) {
+    let itemId = chk.value;
+    let qty = parseInt(document.getElementById('qty_' + itemId).value) || 1;
+    let itemObj = ITEMS.find(x=>x.id===itemId);
+
+    if(!inv[src] || (inv[src][itemId]||0) < qty) {
+      alert(`อุปกรณ์ "${itemObj.name}" ในคลัง ${src} ไม่เพียงพอ (คงเหลือ ${inv[src][itemId]||0})`);
+      return;
+    }
+    selectedItems.push({ itemId, name: itemObj.name, qty });
+  }
+
+  if(!pName.value.trim()){ alert('กรุณากรอกชื่อผู้ป่วย'); return; }
+
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+  let docNo = 'HHC-' + String(new Date().getFullYear()+543).slice(-2) + '-' + Math.floor(1000 + Math.random() * 9000);
+  let rec = {
+    id: Date.now(), docNo, unit: src, itemsJson: JSON.stringify(selectedItems),
+    hn: pHN.value, name: pName.value, addr: pAddr.value, phone: pPhone.value,
+    date: pDate.value, due: pDue.value,
+    rel: byRelative.checked?rName.value:'', relation: byRelative.checked?rRelation.value:'',
+    relPhone: byRelative.checked?rPhone.value:'', staff: pStaff.value, note: txNote.value
+  };
+
+  await fetch(WEB_APP_URL, { method: 'POST', body: JSON.stringify({ action: 'saveTransaction', record: rec }) });
+  await loadData();
+  document.getElementById('loadingOverlay').classList.add('hidden');
+
+  if(confirm('บันทึกการยืมสำเร็จ (เลขที่ '+docNo+')\n\nต้องการพิมพ์ใบยืมอุปกรณ์ A4 เลยหรือไม่?')){
+    printDoc({...rec, returnDate:null, cond:'', returnStaff:''}, 'borrow');
+  }
+
+  this.reset(); fillSelects();
+};
+
+function renderDashboard(){
+  let inv = GLOBAL_DATA.inventory, sel = filterUnit.value;
+  if(Object.keys(inv).length === 0) return;
+  invHead.innerHTML = '<th class="p-2 border text-left">สถานบริการ</th>'+ITEMS.map(i=>`<th class="p-2 border text-center">${i.name}</th>`).join('')+'<th class="p-2 border text-center">รวม</th>';
+  let list = sel==='all'?UNITS:[sel];
+  invBody.innerHTML = list.map(u=>{
+    let sum=0, uData = inv[u]||{};
+    let tds = ITEMS.map(i=>{ let q = uData[i.id]||0; sum+=q; return `<td class="p-2 border text-center ${q<=2?'text-red-600 font-bold bg-red-50':''}">${q}</td>`; }).join('');
+    return `<tr class="hover:bg-slate-50"><td class="p-2 border font-medium">${u}</td>${tds}<td class="p-2 border text-center font-semibold">${sum}</td></tr>`;
+  }).join('');
+}
+
+function renderStock(){
+  stockHead.innerHTML = '<th class="p-2 border text-left">สถานบริการ</th>'+ITEMS.map(i=>`<th class="p-2 border text-center">${i.name}</th>`).join('');
+  let inv = GLOBAL_DATA.inventory;
+  stockBody.innerHTML = UNITS.map(u=>{
+    let uData = inv[u]||{};
+    return `<tr><td class="p-2 border font-medium">${u}</td>`+ITEMS.map(i=>`<td class="p-1 border"><input type="number" min="0" value="${uData[i.id]||0}" data-u="${u}" data-i="${i.id}" class="stockinp w-20 border rounded px-2 py-1 text-center text-sm"></td>`).join('')+'</tr>';
+  }).join('');
+}
+
+async function saveStock(){
+  let inv = {};
+  document.querySelectorAll('.stockinp').forEach(el=>{
+    if(!inv[el.dataset.u]) inv[el.dataset.u] = {};
+    inv[el.dataset.u][el.dataset.i] = parseInt(el.value)||0;
+  });
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+  await fetch(WEB_APP_URL, { method: 'POST', body: JSON.stringify({ action: 'saveStock', inventory: inv }) });
+  await loadData();
+  alert('บันทึกยอดตั้งต้นลงคลังกลางสำเร็จ');
+}
+
+function renderRegistry(){
+  let borrowers = GLOBAL_DATA.borrowers;
+  let outs = borrowers.filter(r=>!r.returnDate);
+  quickReturn.innerHTML = outs.length ? outs.map(r=>{
+    let itemsArr = JSON.parse(r.itemsJson||'[]');
+    let itemsStr = itemsArr.map(it=>`${it.name} (${it.qty})`).join(', ');
+    return `<div class="border rounded-lg p-3 bg-white shadow-sm">
+      <p class="font-semibold text-sm">${r.name} <span class="text-slate-500 font-normal">(HN ${r.hn||'-'})</span></p>
+      <p class="text-xs text-slate-600 mt-0.5">${itemsStr} · คลัง ${r.unit}</p>
+      <div class="flex gap-2 mt-2">
+        <button onclick="openReturn(${r.id})" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1.5 rounded">รับคืนอุปกรณ์</button>
+        <button onclick="printDoc(findRec(${r.id}),'borrow')" class="bg-slate-600 hover:bg-slate-700 text-white text-xs px-3 py-1.5 rounded">ใบยืม</button>
+      </div>
+    </div>`;
+  }).join('') : '<p class="text-sm text-slate-500 col-span-full">ไม่มีรายการค้างคืน</p>';
+
+  const q=(searchBox.value||'').trim().toLowerCase(), st=filterStatus.value;
+  let rows = borrowers.filter(r=>{
+    if(st==='out' && r.returnDate) return false;
+    if(st==='back' && !r.returnDate) return false;
+    if(st==='overdue'){ if(r.returnDate) return false; const dl=daysLeft(r.due); if(dl===null||dl>=0) return false; }
+    if(q && !(r.hn+r.name+r.phone+r.docNo).toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  regBody.innerHTML = rows.map(r=>{
+    let itemsArr = JSON.parse(r.itemsJson||'[]');
+    let itemsStr = itemsArr.map(it=>`• ${it.name} (${it.qty} ชิ้น)`).join('<br>');
+    let dl = daysLeft(r.due);
+    let st = r.returnDate ? '<span class="text-emerald-700 font-semibold">คืนแล้ว</span>'
+      : (dl!==null && dl<0 ? `<span class="text-red-600 font-semibold">เกินกำหนด ${Math.abs(dl)} วัน</span>`
+      : '<span class="text-amber-600 font-semibold">กำลังยืม</span>');
+    let act = (r.returnDate ? '' : `<button onclick="openReturn(${r.id})" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded mb-1 block w-full">รับคืน</button>`)
+      + `<button onclick="printDoc(findRec(${r.id}),'borrow')" class="bg-slate-600 hover:bg-slate-700 text-white px-2 py-1 rounded block w-full">ใบยืม</button>`
+      + (r.returnDate ? `<button onclick="printDoc(findRec(${r.id}),'return')" class="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded mt-1 block w-full">ใบรับคืน</button>` : '');
+    return `<tr class="${(!r.returnDate && dl!==null && dl<0)?'bg-red-50':''}">
+      <td class="p-2 border sticky-col text-center whitespace-nowrap" style="min-width:92px">${act}</td>
+      <td class="p-2 border">${st}</td><td class="p-2 border">${r.docNo||'-'}</td><td class="p-2 border">${thDate(r.date)}</td><td class="p-2 border">${r.unit}</td>
+      <td class="p-2 border">${r.hn||'-'}</td><td class="p-2 border">${r.name}</td><td class="p-2 border">${r.phone||'-'}</td>
+      <td class="p-2 border">${itemsStr}</td>
+      <td class="p-2 border">${r.rel||'-'}</td><td class="p-2 border">${r.relPhone||'-'}</td><td class="p-2 border">${thDate(r.due)}</td><td class="p-2 border">${thDate(r.returnDate)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function findRec(id){ return GLOBAL_DATA.borrowers.find(x=>x.id==id); }
+
+let returnId = null;
+function openReturn(id){
+  returnId = id;
+  let r = GLOBAL_DATA.borrowers.find(x=>x.id==id);
+  let itemsArr = JSON.parse(r.itemsJson||'[]');
+  let itemsStr = itemsArr.map(it=>`${it.name} (${it.qty})`).join(', ');
+  returnInfo.textContent = `${r.docNo} | ${r.name} | อุปกรณ์: ${itemsStr}`;
+  document.getElementById('returnDate').valueAsDate = new Date();
+  document.getElementById('returnModal').classList.remove('hidden');
+}
+
+async function confirmReturn(){
+  let data = {
+    id: returnId,
+    returnDate: document.getElementById('returnDate').value,
+    cond: document.getElementById('returnCond').value,
+    returnStaff: document.getElementById('returnStaff').value
+  };
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+  document.getElementById('returnModal').classList.add('hidden');
+  await fetch(WEB_APP_URL, { method: 'POST', body: JSON.stringify({ action: 'returnEquipment', ...data }) });
+  await loadData();
+  document.getElementById('loadingOverlay').classList.add('hidden');
+
+  if(confirm('บันทึกการรับคืนเรียบร้อย\n\nต้องการพิมพ์ใบรับคืนอุปกรณ์หรือไม่?')){
+    printDoc(findRec(returnId), 'return');
+  }
+}
+
+/* ---------- พิมพ์ใบยืม-คืน A4 (รองรับหลายรายการ) ---------- */
+function printDoc(r, type){
+  if(!r) return;
+  const itemsArr = JSON.parse(r.itemsJson||'[]');
+  const isReturn = type==='return';
+  const title = isReturn ? 'ใบรับคืนอุปกรณ์การแพทย์' : 'ใบยืมอุปกรณ์การแพทย์ (ธนาคารอุปกรณ์ HHC)';
+  const dl = daysLeft(r.due);
+  const overdueTxt = (!r.returnDate && dl!==null && dl<0) ? `<div class="warn">เกินกำหนดคืนแล้ว ${Math.abs(dl)} วัน</div>` : '';
+
+  let itemRows = itemsArr.map((it,idx)=>`<tr><td class="center">${idx+1}</td><td>${it.name}</td><td class="center">${it.qty} ชิ้น</td><td></td></tr>`).join('');
+  // เติมแถวว่างอีก 2 แถวสำหรับเขียนเพิ่มด้วยมือ
+  itemRows += `<tr><td class="center">${itemsArr.length+1}</td><td>&nbsp;</td><td></td><td></td></tr>`;
+  itemRows += `<tr><td class="center">${itemsArr.length+2}</td><td>&nbsp;</td><td></td><td></td></tr>`;
+
+  const html = `<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><title>${title} ${r.docNo||''}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    @page{size:A4;margin:15mm}
+    *{box-sizing:border-box}
+    body{font-family:'Sarabun',sans-serif;font-size:15px;color:#000;margin:0}
+    .sheet{width:180mm;min-height:252mm;margin:0 auto;position:relative}
+    .head{text-align:center;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:14px}
+    .head h1{font-size:20px;margin:0}
+    .head h2{font-size:17px;margin:4px 0 0}
+    .head p{font-size:13px;margin:2px 0 0}
+    .docno{position:absolute;right:0;top:0;font-size:13px}
+    .row{margin:7px 0;line-height:1.9}
+    .dot{border-bottom:1px dotted #000;display:inline-block;min-width:120px;padding:0 6px;font-weight:600}
+    .wide{min-width:260px}
+    table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
+    th,td{border:1px solid #000;padding:6px 8px}
+    th{background:#eee;text-align:center}
+    .center{text-align:center}
+    .cond{border:1px solid #000;padding:10px 14px;font-size:13px;line-height:1.8;margin:10px 0}
+    .cond b{display:block;margin-bottom:4px}
+    .sign{display:flex;justify-content:space-between;gap:14px;margin-top:34px;text-align:center;font-size:14px}
+    .sign div{flex:1}
+    .line{border-bottom:1px dotted #000;height:34px;margin-bottom:6px}
+    .warn{border:2px solid #c00;color:#c00;font-weight:700;text-align:center;padding:6px;margin:10px 0}
+    .foot{position:absolute;bottom:0;width:100%;font-size:11px;color:#444;border-top:1px solid #999;padding-top:4px;display:flex;justify-content:space-between}
+    @media print{.noprint{display:none}}
+  </style></head><body>
+  <div class="noprint" style="text-align:center;padding:10px;background:#eef">
+    <button onclick="window.print()" style="padding:8px 20px;font-size:15px;cursor:pointer">สั่งพิมพ์ / บันทึกเป็น PDF</button>
+    <button onclick="window.close()" style="padding:8px 20px;font-size:15px;cursor:pointer">ปิด</button>
+  </div>
+  <div class="sheet">
+    <div class="docno">เลขที่ ${r.docNo||'-'}</div>
+    <div class="head">
+      <h1>ธนาคารอุปกรณ์การแพทย์ (HHC) เครือข่ายโรงพยาบาลระโนด</h1>
+      <p>อำเภอระโนด จังหวัดสงขลา</p>
+      <h2>${title}</h2>
+    </div>
+    ${overdueTxt}
+    <div class="row">หน่วยงานเจ้าของคลัง/ผู้ให้ยืม <span class="dot wide">${r.unit}</span>
+      &nbsp;วันที่ยืม <span class="dot">${thLong(r.date)}</span></div>
+    <div class="row">ข้าพเจ้า (ผู้ป่วย) <span class="dot wide">${r.name||''}</span> HN <span class="dot">${r.hn||''}</span></div>
+    <div class="row">ที่อยู่ <span class="dot" style="min-width:420px">${r.addr||''}</span></div>
+    <div class="row">โทรศัพท์ติดต่อ <span class="dot">${r.phone||''}</span></div>
+    <div class="row">กรณีญาติยืมแทน ชื่อ-สกุลญาติ <span class="dot wide">${r.rel||''}</span>
+      ความสัมพันธ์ <span class="dot">${r.relation||''}</span></div>
+    <div class="row">โทรศัพท์ญาติ <span class="dot">${r.relPhone||''}</span></div>
+
+    <table>
+      <tr><th style="width:8%">ลำดับ</th><th>รายการอุปกรณ์</th><th style="width:14%">จำนวน</th><th style="width:28%">หมายเหตุ/สภาพอุปกรณ์</th></tr>
+      ${itemRows}
+    </table>
+
+    <div class="row">กำหนดคืนภายในวันที่ <span class="dot">${thLong(r.due)}</span></div>
+    ${isReturn?`<div class="row">รับคืนอุปกรณ์เมื่อวันที่ <span class="dot">${thLong(r.returnDate)}</span> สภาพอุปกรณ์ <span class="dot">${r.cond||''}</span></div>`:''}
+
+    <div class="cond">
+      <b>เงื่อนไขการยืมอุปกรณ์</b>
+      1. ผู้ยืมจะใช้อุปกรณ์เพื่อการดูแลผู้ป่วยที่บ้านตามวัตถุประสงค์เท่านั้น และดูแลรักษาอุปกรณ์ให้อยู่ในสภาพดี<br>
+      2. หากอุปกรณ์ชำรุดหรือสูญหายจากการใช้งานที่ไม่เหมาะสม ผู้ยืมยินยอมรับผิดชอบซ่อมแซมหรือชดใช้ตามสภาพจริง<br>
+      3. เมื่อหมดความจำเป็นในการใช้งาน หรือครบกำหนดคืน ผู้ยืมจะนำอุปกรณ์ส่งคืนหน่วยงานเจ้าของคลังโดยทันที<br>
+      4. ห้ามนำอุปกรณ์ไปให้ผู้อื่นยืมต่อ จำหน่าย หรือดัดแปลงโดยไม่ได้รับอนุญาต<br>
+      5. เจ้าหน้าที่สามารถติดตามเยี่ยมบ้านเพื่อตรวจสอบสภาพการใช้งานอุปกรณ์ได้ตามความเหมาะสม
+    </div>
+
+    <div class="sign">
+      <div><div class="line"></div>(................................................)<br>ผู้ยืม / ญาติผู้ยืมแทน</div>
+      <div><div class="line"></div>(${r.staff? r.staff : '................................................'})<br>เจ้าหน้าที่ผู้ให้ยืม</div>
+      <div><div class="line"></div>(${isReturn && r.returnStaff ? r.returnStaff : '................................................'})<br>${isReturn?'เจ้าหน้าที่ผู้รับคืน':'พยาน / หัวหน้างาน'}</div>
+    </div>
+
+    <div class="foot"><span>ธนาคารอุปกรณ์ HHC เครือข่าย รพ.ระโนด</span><span>พิมพ์เมื่อ ${thLong(new Date().toISOString().slice(0,10))}</span></div>
+  </div>
+  <script>window.onload=()=>setTimeout(()=>window.print(),400)<\/script>
+  </body></html>`;
+
+  const w=window.open('','_blank','width=900,height=1000');
+  w.document.write(html); w.document.close();
+}
+
+/* ---------- Export Excel ---------- */
+function downloadXls(html,name){
+  const blob=new Blob(['\ufeff<html><head><meta charset="utf-8"></head><body>'+html+'</body></html>'],{type:'application/vnd.ms-excel'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click();
+}
+function exportRegistry(){
+  let h='<table border="1"><tr><th>สถานะ</th><th>เลขที่</th><th>วันที่ยืม</th><th>หน่วยงาน</th><th>HN</th><th>ชื่อผู้ป่วย</th><th>เบอร์โทร</th><th>รายการอุปกรณ์</th><th>ญาติ</th><th>เบอร์ญาติ</th><th>กำหนดคืน</th><th>วันที่คืน</th></tr>';
+  GLOBAL_DATA.borrowers.forEach(r=>{
+    let itemsArr = JSON.parse(r.itemsJson||'[]');
+    let itemsStr = itemsArr.map(it=>it.name+' x'+it.qty).join('; ');
+    h+=`<tr><td>${r.returnDate?'คืนแล้ว':'กำลังยืม'}</td><td>${r.docNo||''}</td><td>${thDate(r.date)}</td><td>${r.unit}</td><td>${r.hn||''}</td><td>${r.name}</td><td>${r.phone||''}</td><td>${itemsStr}</td><td>${r.rel||''}</td><td>${r.relPhone||''}</td><td>${thDate(r.due)}</td><td>${thDate(r.returnDate)}</td></tr>`;
+  });
+  downloadXls(h+'</table>','ทะเบียนยืมคืน_HHC_ระโนด.xls');
+}
+function exportInventory(){
+  const inv = GLOBAL_DATA.inventory;
+  let h='<table border="1"><tr><th>สถานบริการ</th>'+ITEMS.map(i=>`<th>${i.name}</th>`).join('')+'<th>รวม</th></tr>';
+  UNITS.forEach(u=>{ let s=0, uData=inv[u]||{}; h+=`<tr><td>${u}</td>`+ITEMS.map(i=>{let q=uData[i.id]||0; s+=q; return `<td>${q}</td>`;}).join('')+`<td>${s}</td></tr>`;});
+  downloadXls(h+'</table>','ยอดคงคลัง_HHC_ระโนด.xls');
+}
+
+function renderChart(){ /* ฟังก์ชันวาดกราฟสรุป */ }
+
+window.onload = () => {
+  fillSelects();
+  loadData();
+};
+</script>
+</body>
+</html>
