@@ -534,7 +534,50 @@ function exportInventory(){
   downloadXls(h+'</table>','ยอดคงคลัง_HHC_ระโนด.xls');
 }
 
-function renderChart(){ /* ฟังก์ชันวาดกราฟสรุป */ }
+let chartInstance = null;
+function renderChart(){
+  const sel = trendUnit.value;
+  const borrowers = GLOBAL_DATA.borrowers.filter(r => sel==='all' ? true : r.unit===sel);
+
+  const monthMap = {};
+  borrowers.forEach(r=>{
+    if(!r.date) return;
+    const d = new Date(r.date);
+    const key = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    if(!monthMap[key]) monthMap[key] = 0;
+    const items = JSON.parse(r.itemsJson||'[]');
+    const qtySum = items.reduce((s,it)=>s+Number(it.qty||0),0);
+    monthMap[key] += qtySum;
+  });
+
+  const sortedKeys = Object.keys(monthMap).sort();
+  const labels = sortedKeys.map(k=>{
+    const [y,m] = k.split('-');
+    return MONTHS_FULL[parseInt(m)-1].slice(0,3)+' '+(parseInt(y)+543);
+  });
+  const data = sortedKeys.map(k=>monthMap[k]);
+
+  const ctx = document.getElementById('chartBar').getContext('2d');
+  if(chartInstance) chartInstance.destroy();
+  chartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels.length ? labels : ['ยังไม่มีข้อมูล'],
+      datasets: [{
+        label: 'จำนวนอุปกรณ์ที่เบิก (ชิ้น)',
+        data: data.length ? data : [0],
+        backgroundColor: '#2563eb',
+        borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+    }
+  });
+}
 
 window.onload = () => {
   fillSelects();
