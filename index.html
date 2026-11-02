@@ -46,7 +46,7 @@ body{font-family:'Sarabun',sans-serif}
     <div class="bg-white p-4 rounded-xl shadow-sm border flex flex-col sm:flex-row items-center justify-between gap-3">
       <h2 class="font-semibold text-slate-700">สรุปยอดคงเหลือแยกตามสถานบริการ (คลังกลาง)</h2>
       <div class="flex gap-2">
-        <select id="filterUnit" class="border rounded-lg px-3 py-2 text-sm"></select>
+        <select id="filterUnit" onchange="renderDashboard()" class="border rounded-lg px-3 py-2 text-sm"></select>
         <button onclick="exportInventory()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-3 py-2 rounded-lg">Export Excel</button>
       </div>
     </div>
@@ -77,7 +77,7 @@ body{font-family:'Sarabun',sans-serif}
   <section id="tab-transaction" class="hidden">
     <div class="bg-white p-6 rounded-xl shadow-sm border max-w-4xl mx-auto">
       <h2 class="text-lg font-semibold text-slate-700 mb-4">บันทึกการยืมอุปกรณ์ให้ผู้ป่วย (เลือกได้หลายรายการ)</h2>
-      
+
       <form id="txForm" class="space-y-4">
         <div>
           <label class="block text-sm font-medium mb-1">หน่วยงานเจ้าของคลัง (ผู้ให้ยืม/ตัดสต็อก)</label>
@@ -85,8 +85,15 @@ body{font-family:'Sarabun',sans-serif}
         </div>
 
         <div class="p-4 bg-slate-50 border rounded-lg space-y-3">
-          <h3 class="text-sm font-semibold text-blue-700">เลือกรายการอุปกรณ์ที่ต้องการยืม</h3>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3 class="text-sm font-semibold text-blue-700">เลือกรายการอุปกรณ์ที่ต้องการยืม</h3>
+            <button type="button" onclick="openDepModal()" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-3 py-1.5 rounded">แก้ไขราคามัดจำมาตรฐาน</button>
+          </div>
           <div id="itemListContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+          <div class="flex items-center justify-between bg-amber-50 border border-amber-300 rounded-lg px-4 py-2">
+            <span class="font-semibold text-amber-800">รวมเงินมัดจำ</span>
+            <span class="text-xl font-bold text-amber-700"><span id="depositTotal">0</span> บาท</span>
+          </div>
         </div>
 
         <div id="patientBox" class="p-4 bg-slate-50 border rounded-lg space-y-3">
@@ -128,6 +135,7 @@ body{font-family:'Sarabun',sans-serif}
       <h2 class="font-semibold text-slate-700">ทะเบียนคุมการยืม-คืน</h2>
       <div class="flex flex-wrap gap-2">
         <input id="searchBox" oninput="renderRegistry()" placeholder="ค้นหา HN / ชื่อ" class="border rounded-lg px-3 py-2 text-sm">
+        <select id="filterRegUnit" onchange="renderRegistry()" class="border rounded-lg px-3 py-2 text-sm"></select>
         <select id="filterStatus" onchange="renderRegistry()" class="border rounded-lg px-3 py-2 text-sm">
           <option value="all">ทุกสถานะ</option><option value="out">กำลังยืม</option><option value="overdue">เกินกำหนด</option><option value="back">คืนแล้ว</option>
         </select>
@@ -144,6 +152,7 @@ body{font-family:'Sarabun',sans-serif}
           <tr>
             <th class="p-2 border sticky-col">จัดการ</th><th class="p-2 border">สถานะ</th><th class="p-2 border">เลขที่</th><th class="p-2 border">วันที่ยืม</th><th class="p-2 border">หน่วยงาน</th>
             <th class="p-2 border">HN</th><th class="p-2 border">ชื่อผู้ป่วย</th><th class="p-2 border">เบอร์โทร</th><th class="p-2 border">รายการอุปกรณ์ที่ยืม</th>
+            <th class="p-2 border">เงินมัดจำ (บาท)</th>
             <th class="p-2 border">ญาติ</th><th class="p-2 border">เบอร์ญาติ</th><th class="p-2 border">กำหนดคืน</th><th class="p-2 border">วันที่คืน</th>
           </tr>
         </thead>
@@ -181,6 +190,20 @@ body{font-family:'Sarabun',sans-serif}
   </div>
 </div>
 
+<!-- MODAL แก้ไขราคามัดจำมาตรฐาน -->
+<div id="depModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-xl p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
+    <h3 class="font-semibold text-slate-700">แก้ไขราคาค่ามัดจำมาตรฐาน (บาท/ชิ้น)</h3>
+    <p class="text-xs text-slate-500">ราคานี้จะใช้เป็นค่าเริ่มต้นตอนเลือกอุปกรณ์ (บันทึกไว้ในเบราว์เซอร์เครื่องนี้)</p>
+    <div id="depEditList" class="space-y-2"></div>
+    <div class="flex gap-2">
+      <button onclick="saveDepModal()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm">บันทึกราคา</button>
+      <button onclick="resetDepModal()" class="bg-slate-200 hover:bg-slate-300 px-3 py-2 rounded text-sm">คืนค่าเริ่มต้น</button>
+      <button onclick="document.getElementById('depModal').classList.add('hidden')" class="bg-slate-200 hover:bg-slate-300 px-3 py-2 rounded text-sm">ปิด</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzoF-lX5JFvVPqxliX6x4YEq_Hm3Rke-AzbyzX4am8hcngv8qysh2kqLlr9AwtXUkX1/exec";
 
@@ -203,12 +226,23 @@ const ITEMS = [
 ];
 const MONTHS_FULL = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
 
+/* ---------- ค่ามัดจำมาตรฐาน (บาท/ชิ้น) ---------- */
+const DEFAULT_DEPOSIT = {
+  bed:1000, airbed:1000, neb:0, suc:2000, o2_5l:3000, o2_10l:3000, o2_tank:500, o2_gauge:500,
+  wc:1000, cane1:0, tripod:0, walker:0, crutch:500, syringe:1000
+};
+let DEPOSIT = {...DEFAULT_DEPOSIT};
+try { DEPOSIT = {...DEFAULT_DEPOSIT, ...JSON.parse(localStorage.getItem('hhcDeposit')||'{}')}; } catch(e) {}
+
 let GLOBAL_DATA = { inventory: {}, borrowers: [] };
 
-/* ---------- ฟังก์ชันวันที่ ---------- */
+/* ---------- ฟังก์ชันวันที่ / เงิน ---------- */
 function thDate(d){ if(!d) return '-'; const x=new Date(d); return x.getDate()+'/'+(x.getMonth()+1)+'/'+(x.getFullYear()+543); }
 function thLong(d){ if(!d) return '.................................'; const x=new Date(d); return `${x.getDate()} ${MONTHS_FULL[x.getMonth()]} พ.ศ. ${x.getFullYear()+543}`; }
 function daysLeft(due){ if(!due) return null; const d=new Date(due); d.setHours(0,0,0,0); const t=new Date(); t.setHours(0,0,0,0); return Math.round((d-t)/86400000); }
+function money(n){ return Number(n||0).toLocaleString('th-TH'); }
+function depTotal(itemsArr){ return itemsArr.reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.deposit)||0),0); }
+function depTotalText(itemsArr){ const t=depTotal(itemsArr); return t>0 ? money(t) : '-'; }
 
 async function loadData() {
   document.getElementById('loadingOverlay').classList.remove('hidden');
@@ -245,24 +279,71 @@ function switchTab(id){
 }
 function goAlerts(){ switchTab('registry'); document.getElementById('filterStatus').value='overdue'; renderRegistry(); }
 
+/* ---------- รายการอุปกรณ์ + ค่ามัดจำในฟอร์มยืม ---------- */
+function renderItemList(){
+  document.getElementById('itemListContainer').innerHTML = ITEMS.map(i=>`
+    <div class="p-2 border rounded bg-white space-y-1.5">
+      <div class="flex items-center justify-between gap-2">
+        <label class="flex items-center gap-2 text-sm cursor-pointer flex-1">
+          <input type="checkbox" value="${i.id}" class="item-chk w-4 h-4 text-blue-600 rounded">
+          <span>${i.name}</span>
+        </label>
+        <input type="number" min="1" value="1" id="qty_${i.id}" title="จำนวน" class="w-16 border rounded px-1.5 py-1 text-sm text-center">
+      </div>
+      <div class="flex items-center justify-between text-xs text-slate-500">
+        <span>ค่ามัดจำ/ชิ้น</span>
+        <span><input type="number" min="0" step="50" value="${DEPOSIT[i.id]||0}" id="dep_${i.id}" class="w-20 border rounded px-1.5 py-0.5 text-right text-sm"> บาท</span>
+      </div>
+    </div>
+  `).join('');
+  calcDeposit();
+}
+
+function calcDeposit(){
+  let total = 0;
+  document.querySelectorAll('.item-chk:checked').forEach(c=>{
+    const id = c.value;
+    const q = parseInt(document.getElementById('qty_'+id).value) || 1;
+    const p = parseFloat(document.getElementById('dep_'+id).value) || 0;
+    total += q*p;
+  });
+  document.getElementById('depositTotal').textContent = money(total);
+}
+
 function fillSelects(){
   const opt = '<option value="all">-- ทุกสถานบริการ --</option>'+UNITS.map(u=>`<option>${u}</option>`).join('');
   filterUnit.innerHTML = opt; trendUnit.innerHTML = opt;
+  const prevRegUnit = filterRegUnit.value;
+  filterRegUnit.innerHTML = opt; filterRegUnit.value = prevRegUnit || 'all';
   txSource.innerHTML = UNITS.map(u=>`<option>${u}</option>`).join('');
-
-  let itemHtml = ITEMS.map(i=>`
-    <div class="flex items-center justify-between p-2 border rounded bg-white">
-      <label class="flex items-center gap-2 text-sm cursor-pointer flex-1">
-        <input type="checkbox" value="${i.id}" class="item-chk w-4 h-4 text-blue-600 rounded">
-        <span>${i.name}</span>
-      </label>
-      <input type="number" min="1" value="1" id="qty_${i.id}" class="w-16 border rounded px-1.5 py-1 text-sm text-center">
-    </div>
-  `).join('');
-  document.getElementById('itemListContainer').innerHTML = itemHtml;
-
+  renderItemList();
   pDate.valueAsDate = new Date();
   let d = new Date(); d.setDate(d.getDate()+30); pDue.valueAsDate = d;
+}
+
+/* ---------- ป๊อปอัปแก้ไขราคามัดจำมาตรฐาน ---------- */
+function openDepModal(){
+  document.getElementById('depEditList').innerHTML = ITEMS.map(i=>`
+    <div class="flex items-center justify-between gap-2 text-sm">
+      <span class="flex-1">${i.name}</span>
+      <input type="number" min="0" step="50" value="${DEPOSIT[i.id]||0}" data-id="${i.id}" class="depedit w-24 border rounded px-2 py-1 text-right">
+      <span class="text-xs text-slate-500">บาท</span>
+    </div>`).join('');
+  document.getElementById('depModal').classList.remove('hidden');
+}
+function saveDepModal(){
+  document.querySelectorAll('.depedit').forEach(el=>{ DEPOSIT[el.dataset.id] = parseFloat(el.value)||0; });
+  localStorage.setItem('hhcDeposit', JSON.stringify(DEPOSIT));
+  document.getElementById('depModal').classList.add('hidden');
+  renderItemList();
+  alert('บันทึกราคามัดจำมาตรฐานเรียบร้อย');
+}
+function resetDepModal(){
+  if(!confirm('คืนค่าราคามัดจำทั้งหมดเป็นค่าเริ่มต้นหรือไม่?')) return;
+  DEPOSIT = {...DEFAULT_DEPOSIT};
+  localStorage.removeItem('hhcDeposit');
+  openDepModal();
+  renderItemList();
 }
 
 document.getElementById('txForm').onsubmit = async function(e){
@@ -277,13 +358,14 @@ document.getElementById('txForm').onsubmit = async function(e){
   for(let chk of chks) {
     let itemId = chk.value;
     let qty = parseInt(document.getElementById('qty_' + itemId).value) || 1;
+    let deposit = parseFloat(document.getElementById('dep_' + itemId).value) || 0;
     let itemObj = ITEMS.find(x=>x.id===itemId);
 
     if(!inv[src] || (inv[src][itemId]||0) < qty) {
-      alert(`อุปกรณ์ "${itemObj.name}" ในคลัง ${src} ไม่เพียงพอ (คงเหลือ ${inv[src][itemId]||0})`);
+      alert(`อุปกรณ์ "${itemObj.name}" ในคลัง ${src} ไม่เพียงพอ (คงเหลือ ${(inv[src]||{})[itemId]||0})`);
       return;
     }
-    selectedItems.push({ itemId, name: itemObj.name, qty });
+    selectedItems.push({ itemId, name: itemObj.name, qty, deposit });
   }
 
   if(!pName.value.trim()){ alert('กรุณากรอกชื่อผู้ป่วย'); return; }
@@ -302,15 +384,19 @@ document.getElementById('txForm').onsubmit = async function(e){
   await loadData();
   document.getElementById('loadingOverlay').classList.add('hidden');
 
-  if(confirm('บันทึกการยืมสำเร็จ (เลขที่ '+docNo+')\n\nต้องการพิมพ์ใบยืมอุปกรณ์ A4 เลยหรือไม่?')){
+  if(confirm('บันทึกการยืมสำเร็จ (เลขที่ '+docNo+')\nเงินมัดจำรวม '+money(depTotal(selectedItems))+' บาท\n\nต้องการพิมพ์ใบยืมอุปกรณ์ A4 เลยหรือไม่?')){
     printDoc({...rec, returnDate:null, cond:'', returnStaff:''}, 'borrow');
   }
 
   this.reset(); fillSelects();
 };
 
+/* คำนวณเงินมัดจำรวมเมื่อติ๊ก/เปลี่ยนจำนวน/แก้ราคา */
+document.getElementById('itemListContainer').addEventListener('input', calcDeposit);
+document.getElementById('itemListContainer').addEventListener('change', calcDeposit);
+
 function renderDashboard(){
-  let inv = GLOBAL_DATA.inventory, sel = filterUnit.value;
+  let inv = GLOBAL_DATA.inventory, sel = filterUnit.value || 'all';
   if(Object.keys(inv).length === 0) return;
   invHead.innerHTML = '<th class="p-2 border text-left">สถานบริการ</th>'+ITEMS.map(i=>`<th class="p-2 border text-center">${i.name}</th>`).join('')+'<th class="p-2 border text-center">รวม</th>';
   let list = sel==='all'?UNITS:[sel];
@@ -342,15 +428,22 @@ async function saveStock(){
   alert('บันทึกยอดตั้งต้นลงคลังกลางสำเร็จ');
 }
 
+/* ---------- ทะเบียนยืม-คืน (กรองตามสถานบริการ) ---------- */
+function getRegList(){
+  const u = (document.getElementById('filterRegUnit')||{}).value || 'all';
+  return GLOBAL_DATA.borrowers.filter(r => u==='all' || r.unit===u);
+}
+
 function renderRegistry(){
-  let borrowers = GLOBAL_DATA.borrowers;
+  let borrowers = getRegList();
   let outs = borrowers.filter(r=>!r.returnDate);
   quickReturn.innerHTML = outs.length ? outs.map(r=>{
     let itemsArr = JSON.parse(r.itemsJson||'[]');
     let itemsStr = itemsArr.map(it=>`${it.name} (${it.qty})`).join(', ');
+    let dep = depTotal(itemsArr);
     return `<div class="border rounded-lg p-3 bg-white shadow-sm">
       <p class="font-semibold text-sm">${r.name} <span class="text-slate-500 font-normal">(HN ${r.hn||'-'})</span></p>
-      <p class="text-xs text-slate-600 mt-0.5">${itemsStr} · คลัง ${r.unit}</p>
+      <p class="text-xs text-slate-600 mt-0.5">${itemsStr} · คลัง ${r.unit}${dep>0?` · มัดจำ ${money(dep)} บาท`:''}</p>
       <div class="flex gap-2 mt-2">
         <button onclick="openReturn(${r.id})" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1.5 rounded">รับคืนอุปกรณ์</button>
         <button onclick="printDoc(findRec(${r.id}),'borrow')" class="bg-slate-600 hover:bg-slate-700 text-white text-xs px-3 py-1.5 rounded">ใบยืม</button>
@@ -363,7 +456,7 @@ function renderRegistry(){
     if(st==='out' && r.returnDate) return false;
     if(st==='back' && !r.returnDate) return false;
     if(st==='overdue'){ if(r.returnDate) return false; const dl=daysLeft(r.due); if(dl===null||dl>=0) return false; }
-    if(q && !(r.hn+r.name+r.phone+r.docNo).toLowerCase().includes(q)) return false;
+    if(q && !((r.hn||'')+(r.name||'')+(r.phone||'')+(r.docNo||'')).toLowerCase().includes(q)) return false;
     return true;
   });
 
@@ -371,7 +464,7 @@ function renderRegistry(){
     let itemsArr = JSON.parse(r.itemsJson||'[]');
     let itemsStr = itemsArr.map(it=>`• ${it.name} (${it.qty} ชิ้น)`).join('<br>');
     let dl = daysLeft(r.due);
-    let st = r.returnDate ? '<span class="text-emerald-700 font-semibold">คืนแล้ว</span>'
+    let stt = r.returnDate ? '<span class="text-emerald-700 font-semibold">คืนแล้ว</span>'
       : (dl!==null && dl<0 ? `<span class="text-red-600 font-semibold">เกินกำหนด ${Math.abs(dl)} วัน</span>`
       : '<span class="text-amber-600 font-semibold">กำลังยืม</span>');
     let act = (r.returnDate ? '' : `<button onclick="openReturn(${r.id})" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded mb-1 block w-full">รับคืน</button>`)
@@ -379,9 +472,10 @@ function renderRegistry(){
       + (r.returnDate ? `<button onclick="printDoc(findRec(${r.id}),'return')" class="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded mt-1 block w-full">ใบรับคืน</button>` : '');
     return `<tr class="${(!r.returnDate && dl!==null && dl<0)?'bg-red-50':''}">
       <td class="p-2 border sticky-col text-center whitespace-nowrap" style="min-width:92px">${act}</td>
-      <td class="p-2 border">${st}</td><td class="p-2 border">${r.docNo||'-'}</td><td class="p-2 border">${thDate(r.date)}</td><td class="p-2 border">${r.unit}</td>
+      <td class="p-2 border">${stt}</td><td class="p-2 border">${r.docNo||'-'}</td><td class="p-2 border">${thDate(r.date)}</td><td class="p-2 border">${r.unit}</td>
       <td class="p-2 border">${r.hn||'-'}</td><td class="p-2 border">${r.name}</td><td class="p-2 border">${r.phone||'-'}</td>
       <td class="p-2 border">${itemsStr}</td>
+      <td class="p-2 border text-right">${depTotalText(itemsArr)}</td>
       <td class="p-2 border">${r.rel||'-'}</td><td class="p-2 border">${r.relPhone||'-'}</td><td class="p-2 border">${thDate(r.due)}</td><td class="p-2 border">${thDate(r.returnDate)}</td>
     </tr>`;
   }).join('');
@@ -418,7 +512,7 @@ async function confirmReturn(){
   }
 }
 
-/* ---------- พิมพ์ใบยืม-คืน A4 (รองรับหลายรายการ) ---------- */
+/* ---------- พิมพ์ใบยืม-คืน A4 (รองรับหลายรายการ + ค่ามัดจำ + หมายเหตุ) ---------- */
 function printDoc(r, type){
   if(!r) return;
   const itemsArr = JSON.parse(r.itemsJson||'[]');
@@ -426,11 +520,14 @@ function printDoc(r, type){
   const title = isReturn ? 'ใบรับคืนอุปกรณ์การแพทย์' : 'ใบยืมอุปกรณ์การแพทย์ (ธนาคารอุปกรณ์ HHC)';
   const dl = daysLeft(r.due);
   const overdueTxt = (!r.returnDate && dl!==null && dl<0) ? `<div class="warn">เกินกำหนดคืนแล้ว ${Math.abs(dl)} วัน</div>` : '';
+  const total = depTotal(itemsArr);
 
-  let itemRows = itemsArr.map((it,idx)=>`<tr><td class="center">${idx+1}</td><td>${it.name}</td><td class="center">${it.qty} ชิ้น</td><td></td></tr>`).join('');
-  // เติมแถวว่างอีก 2 แถวสำหรับเขียนเพิ่มด้วยมือ
-  itemRows += `<tr><td class="center">${itemsArr.length+1}</td><td>&nbsp;</td><td></td><td></td></tr>`;
-  itemRows += `<tr><td class="center">${itemsArr.length+2}</td><td>&nbsp;</td><td></td><td></td></tr>`;
+  let itemRows = itemsArr.map((it,idx)=>{
+    const p = Number(it.deposit)||0;
+    return `<tr><td class="center">${idx+1}</td><td>${it.name}</td><td class="center">${it.qty} ชิ้น</td><td class="right">${p>0?money(p):'-'}</td><td class="right">${p>0?money(p*(Number(it.qty)||0)):'-'}</td><td></td></tr>`;
+  }).join('');
+  itemRows += `<tr><td class="center">${itemsArr.length+1}</td><td>&nbsp;</td><td></td><td></td><td></td><td></td></tr>`;
+  itemRows += `<tr><td colspan="4" class="right"><b>รวมเงินมัดจำทั้งสิ้น (บาท)</b></td><td class="right"><b>${total>0?money(total):'-'}</b></td><td></td></tr>`;
 
   const html = `<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><title>${title} ${r.docNo||''}</title>
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
@@ -444,20 +541,21 @@ function printDoc(r, type){
     .head h2{font-size:17px;margin:4px 0 0}
     .head p{font-size:13px;margin:2px 0 0}
     .docno{position:absolute;right:0;top:0;font-size:13px}
-    .row{margin:7px 0;line-height:1.9}
+    .row{margin:6px 0;line-height:1.9}
     .dot{border-bottom:1px dotted #000;display:inline-block;min-width:120px;padding:0 6px;font-weight:600}
     .wide{min-width:260px}
-    table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
-    th,td{border:1px solid #000;padding:6px 8px}
+    table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}
+    th,td{border:1px solid #000;padding:5px 8px}
     th{background:#eee;text-align:center}
     .center{text-align:center}
-    .cond{border:1px solid #000;padding:10px 14px;font-size:13px;line-height:1.8;margin:10px 0}
+    .right{text-align:right}
+    .cond{border:1px solid #000;padding:10px 14px;font-size:13px;line-height:1.75;margin:10px 0}
     .cond b{display:block;margin-bottom:4px}
-    .sign{display:flex;justify-content:space-between;gap:14px;margin-top:34px;text-align:center;font-size:14px}
+    .sign{display:flex;justify-content:space-between;gap:14px;margin-top:30px;text-align:center;font-size:14px}
     .sign div{flex:1}
     .line{border-bottom:1px dotted #000;height:34px;margin-bottom:6px}
     .warn{border:2px solid #c00;color:#c00;font-weight:700;text-align:center;padding:6px;margin:10px 0}
-    .foot{position:absolute;bottom:0;width:100%;font-size:11px;color:#444;border-top:1px solid #999;padding-top:4px;display:flex;justify-content:space-between}
+    .foot{margin-top:18px;font-size:11px;color:#444;border-top:1px solid #999;padding-top:4px;display:flex;justify-content:space-between}
     @media print{.noprint{display:none}}
   </style></head><body>
   <div class="noprint" style="text-align:center;padding:10px;background:#eef">
@@ -482,10 +580,11 @@ function printDoc(r, type){
     <div class="row">โทรศัพท์ญาติ <span class="dot">${r.relPhone||''}</span></div>
 
     <table>
-      <tr><th style="width:8%">ลำดับ</th><th>รายการอุปกรณ์</th><th style="width:14%">จำนวน</th><th style="width:28%">หมายเหตุ/สภาพอุปกรณ์</th></tr>
+      <tr><th style="width:7%">ลำดับ</th><th>รายการอุปกรณ์</th><th style="width:12%">จำนวน</th><th style="width:15%">มัดจำ/ชิ้น (บาท)</th><th style="width:14%">รวม (บาท)</th><th style="width:20%">หมายเหตุ/สภาพอุปกรณ์</th></tr>
       ${itemRows}
     </table>
 
+    <div class="row">หมายเหตุ / สภาพอุปกรณ์ <span class="dot" style="min-width:380px">${r.note||''}</span></div>
     <div class="row">กำหนดคืนภายในวันที่ <span class="dot">${thLong(r.due)}</span></div>
     ${isReturn?`<div class="row">รับคืนอุปกรณ์เมื่อวันที่ <span class="dot">${thLong(r.returnDate)}</span> สภาพอุปกรณ์ <span class="dot">${r.cond||''}</span></div>`:''}
 
@@ -493,7 +592,7 @@ function printDoc(r, type){
       <b>เงื่อนไขการยืมอุปกรณ์</b>
       1. ผู้ยืมจะใช้อุปกรณ์เพื่อการดูแลผู้ป่วยที่บ้านตามวัตถุประสงค์เท่านั้น และดูแลรักษาอุปกรณ์ให้อยู่ในสภาพดี<br>
       2. หากอุปกรณ์ชำรุดหรือสูญหายจากการใช้งานที่ไม่เหมาะสม ผู้ยืมยินยอมรับผิดชอบซ่อมแซมหรือชดใช้ตามสภาพจริง<br>
-      3. เมื่อหมดความจำเป็นในการใช้งาน หรือครบกำหนดคืน ผู้ยืมจะนำอุปกรณ์ส่งคืนหน่วยงานเจ้าของคลังโดยทันที<br>
+      3. เมื่อหมดความจำเป็นในการใช้งาน หรือครบกำหนดคืน ผู้ยืมจะนำอุปกรณ์ส่งคืนหน่วยงานเจ้าของคลังโดยทันที โดยให้นำมาคืนในเวลาราชการเท่านั้น (วันจันทร์-ศุกร์ เวลา 08.00 น.-16.00 น. ยกเว้นวันหยุดนักขัตฤกษ์)<br>
       4. ห้ามนำอุปกรณ์ไปให้ผู้อื่นยืมต่อ จำหน่าย หรือดัดแปลงโดยไม่ได้รับอนุญาต<br>
       5. เจ้าหน้าที่สามารถติดตามเยี่ยมบ้านเพื่อตรวจสอบสภาพการใช้งานอุปกรณ์ได้ตามความเหมาะสม
     </div>
@@ -519,11 +618,11 @@ function downloadXls(html,name){
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click();
 }
 function exportRegistry(){
-  let h='<table border="1"><tr><th>สถานะ</th><th>เลขที่</th><th>วันที่ยืม</th><th>หน่วยงาน</th><th>HN</th><th>ชื่อผู้ป่วย</th><th>เบอร์โทร</th><th>รายการอุปกรณ์</th><th>ญาติ</th><th>เบอร์ญาติ</th><th>กำหนดคืน</th><th>วันที่คืน</th></tr>';
-  GLOBAL_DATA.borrowers.forEach(r=>{
+  let h='<table border="1"><tr><th>สถานะ</th><th>เลขที่</th><th>วันที่ยืม</th><th>หน่วยงาน</th><th>HN</th><th>ชื่อผู้ป่วย</th><th>เบอร์โทร</th><th>รายการอุปกรณ์</th><th>เงินมัดจำ (บาท)</th><th>หมายเหตุ</th><th>ญาติ</th><th>เบอร์ญาติ</th><th>กำหนดคืน</th><th>วันที่คืน</th></tr>';
+  getRegList().forEach(r=>{
     let itemsArr = JSON.parse(r.itemsJson||'[]');
     let itemsStr = itemsArr.map(it=>it.name+' x'+it.qty).join('; ');
-    h+=`<tr><td>${r.returnDate?'คืนแล้ว':'กำลังยืม'}</td><td>${r.docNo||''}</td><td>${thDate(r.date)}</td><td>${r.unit}</td><td>${r.hn||''}</td><td>${r.name}</td><td>${r.phone||''}</td><td>${itemsStr}</td><td>${r.rel||''}</td><td>${r.relPhone||''}</td><td>${thDate(r.due)}</td><td>${thDate(r.returnDate)}</td></tr>`;
+    h+=`<tr><td>${r.returnDate?'คืนแล้ว':'กำลังยืม'}</td><td>${r.docNo||''}</td><td>${thDate(r.date)}</td><td>${r.unit}</td><td>${r.hn||''}</td><td>${r.name}</td><td>${r.phone||''}</td><td>${itemsStr}</td><td>${depTotal(itemsArr)}</td><td>${r.note||''}</td><td>${r.rel||''}</td><td>${r.relPhone||''}</td><td>${thDate(r.due)}</td><td>${thDate(r.returnDate)}</td></tr>`;
   });
   downloadXls(h+'</table>','ทะเบียนยืมคืน_HHC_ระโนด.xls');
 }
@@ -534,6 +633,7 @@ function exportInventory(){
   downloadXls(h+'</table>','ยอดคงคลัง_HHC_ระโนด.xls');
 }
 
+/* ---------- กราฟแนวโน้มรายเดือน ---------- */
 let chartInstance = null;
 function renderChart(){
   const sel = trendUnit.value;
@@ -546,8 +646,7 @@ function renderChart(){
     const key = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
     if(!monthMap[key]) monthMap[key] = 0;
     const items = JSON.parse(r.itemsJson||'[]');
-    const qtySum = items.reduce((s,it)=>s+Number(it.qty||0),0);
-    monthMap[key] += qtySum;
+    monthMap[key] += items.reduce((s,it)=>s+Number(it.qty||0),0);
   });
 
   const sortedKeys = Object.keys(monthMap).sort();
